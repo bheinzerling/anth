@@ -1,0 +1,147 @@
+#! /usr/bin/env python3
+
+import argparse
+from pathlib import Path
+from urllib.parse import urljoin
+from urllib.request import urlopen
+import readline
+import json
+
+
+def argsparser():
+    desc = "TODO"
+    a = argparse.ArgumentParser(description=desc)
+    a.add_argument(
+        "query", type=str, nargs="+", help="space-separated query terms")
+    a.add_argument(
+        "--anthology-url", type=str,
+        default="https://aclanthology.coli.uni-saarland.de")
+    a.add_argument(
+        "--query-url", type=str, default="catalog?"
+        "per_page={per_page}&utf8=1&search_field=all_fields&q={query}")
+    a.add_argument(
+        "--per-page", type=int, default=10, help="result per page")
+    a.add_argument(
+        "--show-topn", type=int, default=5, help="show top n search results")
+    a.add_argument(
+        "--search-only", action="store_true",
+        help="search, show results, then quit")
+    a.add_argument(
+        "--bibkey", type=str,
+        default="{firstauthor}{year}{titleword}",
+        help="format for the bibkey suggestion")
+    a.add_argument(
+        "--bibfile", type=Path,
+        help="your bibtex file to which the .bib file found on the "
+        "anthology will be appended")
+    return a
+
+
+def _input(prompt, prefill=''):
+    readline.set_startup_hook(lambda: readline.insert_text(prefill))
+    try:
+        return input(prompt)
+    finally:
+        readline.set_startup_hook()
+
+
+def curl(url):
+    return urlopen(url).read().decode("utf8")
+
+
+def titleword(title):
+    title = title.lower().split()
+    for titleword in title:
+        if len(titleword) > 4:
+            break
+    else:
+        titleword = title[0]
+    return "".join(filter(str.isalnum, titleword))
+
+
+def main():
+    args = argsparser().parse_args()
+    url = urljoin(args.anthology_url, args.query_url.format(
+        per_page=args.per_page,
+        query="+".join(args.query)))
+    html = curl(url)
+    import re  # H̸̡̪̯ͨ͊̽̅̾̎Ȩ̬̩̾͛ͪ̈́̀́͘ ̶̧̨̱̹̭̯ͧ̾ͬC̷̙̲̝͖ͭ̏ͥͮ͟Oͮ͏̮̪̝͍M̲̖͊̒ͪͩͬ̚̚͜Ȇ̴̟̟͙̞ͩ͌͝S̨̥̫͎̭ͯ̿̔̀ͅ
+    bib_urls = re.findall('[^"]+\.bib', html)
+    if not bib_urls:
+        print("No results for query:", args.query)
+        return
+
+    n = len(bib_urls)
+    topnstr = "" if n <= args.show_topn else f", showing top {args.show_topn}"
+    print(f"Found {n} .bib file{'s' if n > 1 else ''}{topnstr}:\n")
+
+    def read_biburl(bib_url):
+        url = urljoin(args.anthology_url, bib_url)
+        return curl(url).strip()
+
+    def parse_bib(bib):
+        lines = bib.split(",\n")
+        entries = map(str.strip, lines[1:-1])
+        entries = re.sub("\s+", " ", ',"'.join(entries))
+        entries = entries.replace("\\", "\\\\").replace('\\"', '\\\\"')
+        try:
+            bibdict = json.loads('{"' + entries.replace(' = "', '": "') + "}")
+        except:
+            print("cannot parse .bib file:")
+            print(bib)
+            raise
+        bibdict["pubtype"], bibdict["bibkey"] = lines[0].split("{")
+        return bibdict
+
+    bibs = list(map(read_biburl, bib_urls[:args.show_topn]))
+    parsed_bibs = list(map(parse_bib, bibs))
+    for i, (bib_url, bib) in enumerate(zip(bib_urls, parsed_bibs), start=1):
+        print(
+            "{0:>5}".format(i) +
+            "\t{author}\n\t{year}\n\t{title}\n\t".format(**bib) +
+            urljoin(args.anthology_url, bib_url) + "\n")
+    if args.search_only:
+        return
+    if n == 1 or args.show_topn == 1:
+        choice = 0
+    else:
+        while True:
+            choice = input(f"Select entry [1-{len(bibs)}]: ")
+            try:
+                choice = int(choice)
+                assert 1 <= choice <= len(bibs)
+                choice -= 1
+                break
+            except:
+                print("not a valid entry number:", choice)
+    bib, bibdict = bibs[choice], parsed_bibs[choice]
+
+    def parse_firstauthor(author):
+        firstauthor = author.split(",")[0].lower()
+        firstauthor = firstauthor.replace("{", "").replace("}", "")
+        return re.sub(r"\\.", "", firstauthor)
+
+    if args.bibkey:
+        bibkey = args.bibkey.format(**{
+            "firstauthor": parse_firstauthor(bibdict["author"]),
+            "year": bibdict["year"],
+            "titleword": titleword(bibdict["title"])})
+        bibkey = _input("bibkey: ", bibkey)
+    else:
+        bibkey = bibdict.pop("bibkey")
+
+    pubtype = bibdict.pop("pubtype")
+    newbib = pubtype + "{" + bibkey + ",\n" + \
+        ",\n".join(f'{k} = "{v}"' for k, v in bibdict.items()) + "\n}"
+
+    if not args.bibfile:
+        args.bibfile = (list(Path(".").glob("*.bib")) or [None])[0]
+    if args.bibfile:
+        with args.bibfile.open("a", encoding="utf8") as out:
+            out.write("\n" + newbib + "\n")
+        print("\nAppended to", args.bibfile)
+    print("\n" + newbib)
+
+
+if __name__ == "__main__":
+    main()

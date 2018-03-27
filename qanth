@@ -1,0 +1,7 @@
+#! /usr/bin/env bash
+set -euo pipefail
+
+query=$(echo $@ | sed "s/ /+/g")
+anth=https://aclanthology.coli.uni-saarland.de
+bibfile=$(curl -s "$anth/catalog?per_page=10&utf8=1&search_field=all_fields&q=$query" | grep -oh '[^"]\+\.bib' | head -1)
+curl -s $anth$bibfile
