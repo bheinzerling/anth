@@ -9,7 +9,7 @@ import json
 
 
 def argsparser():
-    desc = "TODO"
+    desc = "A simple command line interface to the ACL Anthology"
     a = argparse.ArgumentParser(description=desc)
     a.add_argument(
         "query", type=str, nargs="+", help="space-separated query terms")
