@@ -1,4 +1,4 @@
-#! /usr/bin/env python3
+#! /usr/bin/env python3.7
 
 import argparse
 from pathlib import Path
@@ -80,6 +80,8 @@ def main():
         return curl(url).strip()
 
     def parse_bib(bib):
+        if bib.endswith('"\n}'):
+            bib = bib[:-3] + '",\n}'
         lines = bib.split(",\n")
         entries = map(str.strip, lines[1:-1])
         entries = re.sub("\s+", " ", ',"'.join(entries))
