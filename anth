@@ -31,7 +31,7 @@ def argsparser():
         default="{firstauthor}{year}{titleword}",
         help="format for the bibkey suggestion")
     a.add_argument(
-        "--bibfile", type=Path,
+        "--bibfile", type=Path, default='add.bib',
         help="your bibtex file to which the .bib file found on the "
         "anthology will be appended")
     return a
@@ -84,13 +84,25 @@ def main():
             bib = bib[:-3] + '",\n}'
         lines = bib.split(",\n")
         entries = map(str.strip, lines[1:-1])
+
+        def clean_entry(entry):
+            entry = entry = re.sub(r'([^\\])"', '\\1', entry)
+            key, *rest = entry.split('=')
+            value = '='.join(rest)
+            value = '"' + value.strip() + '"'
+            return f'{key} = {value}'
+
+        entries = map(clean_entry, entries)
         entries = re.sub("\s+", " ", ',"'.join(entries))
         entries = entries.replace("\\", "\\\\").replace('\\"', '\\\\"')
+        bib_json = '{"' + entries.replace(' = "', '": "') + "}"
         try:
-            bibdict = json.loads('{"' + entries.replace(' = "', '": "') + "}")
+            bibdict = json.loads(bib_json)
         except:
             print("cannot parse .bib file:")
             print(bib)
+            print()
+            print(bib_json)
             raise
         bibdict["pubtype"], bibdict["bibkey"] = lines[0].split("{")
         return bibdict
